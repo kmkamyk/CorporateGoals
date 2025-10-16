@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Card } from './common';
 import { CogIcon } from './icons';
+import { LocalLlmConfig } from '../types';
 
-// Fix: Remove props related to local LLM as we are using Gemini API
 interface AIConfigurationProps {
     assignmentPrompt: string;
     setAssignmentPrompt: (prompt: string) => void;
     summaryPrompt: string;
     setSummaryPrompt: (prompt: string) => void;
     disabled: boolean;
+    localLlmConfig: LocalLlmConfig;
+    setLocalLlmConfig: (config: LocalLlmConfig) => void;
 }
 
 export const AIConfiguration: React.FC<AIConfigurationProps> = ({
@@ -16,9 +18,16 @@ export const AIConfiguration: React.FC<AIConfigurationProps> = ({
     setAssignmentPrompt,
     summaryPrompt,
     setSummaryPrompt,
-    disabled
+    disabled,
+    localLlmConfig,
+    setLocalLlmConfig
 }) => {
     const [isOpen, setIsOpen] = useState(false);
+
+    const handleLlmConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setLocalLlmConfig({ ...localLlmConfig, [name]: value });
+    };
 
     return (
         <Card>
@@ -43,10 +52,23 @@ export const AIConfiguration: React.FC<AIConfigurationProps> = ({
             
             {isOpen && (
                 <div className="mt-6 space-y-6">
-                    {/* Fix: Remove local LLM URL configuration section */}
+                    {/* Local LLM Configuration */}
+                     <div className="space-y-4 p-4 border border-gray-200 rounded-md">
+                        <h3 className="text-base font-medium text-gray-900">Konfiguracja Lokalnego LLM</h3>
+                         <div>
+                            <label htmlFor="url" className="block text-sm font-medium text-gray-700">Adres URL Lokalnego LLM</label>
+                            <input type="text" name="url" id="url" value={localLlmConfig.url} onChange={handleLlmConfigChange} disabled={disabled} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50 disabled:bg-gray-100"/>
+                            <p className="text-xs text-gray-500 mt-1">Podaj pełny adres URL do endpointu API (np. z llama.cpp).</p>
+                         </div>
+                         <div>
+                            <label htmlFor="model" className="block text-sm font-medium text-gray-700">Nazwa Modelu</label>
+                            <input type="text" name="model" id="model" value={localLlmConfig.model} onChange={handleLlmConfigChange} disabled={disabled} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50 disabled:bg-gray-100"/>
+                             <p className="text-xs text-gray-500 mt-1">Podaj nazwę modelu, której oczekuje Twoje API.</p>
+                         </div>
+                     </div>
                     
                     {/* Prompt Templates */}
-                    <div>
+                    <div className="pt-4 border-t border-gray-200">
                         <h3 className="text-base font-medium text-gray-900">Szablony promptów</h3>
                         <p className="text-sm text-gray-500 mt-1">
                             Możesz edytować prompty, aby dostosować działanie AI. Użyj {'`{{placeholder}}`'} do wstawiania danych.

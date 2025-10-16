@@ -32,3 +32,8 @@ export interface AssignmentResult {
 }
 
 export type DataSourceMode = 'mock' | 'jira' | 'manual';
+
+export interface LocalLlmConfig {
+    url: string;
+    model: string;
+}

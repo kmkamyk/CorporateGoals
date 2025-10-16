@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult, DataSourceMode } from './types';
+import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult, DataSourceMode, LocalLlmConfig } from './types';
 import { GoalInput } from './components/GoalInput';
 import { JiraConnect } from './components/JiraConnect';
 import { SummaryDisplay } from './components/SummaryDisplay';
 import { AIConfiguration } from './components/AIConfiguration';
 import { Button } from './components/common';
-import { assignAndSummarizeTasks, generateAnnualSummary } from './services/geminiService';
+import * as localLlmService from './services/localLlmService';
 import { fetchCompletedTasksMock, fetchRealCompletedTasks, parseManualTasks } from './services/jiraService';
 import { SparklesIcon } from './components/icons';
 import { ASSIGNMENT_PROMPT_TEMPLATE, SUMMARY_PROMPT_TEMPLATE } from './prompts';
@@ -26,6 +26,11 @@ const App: React.FC = () => {
 
     const [assignmentPrompt, setAssignmentPrompt] = useState(ASSIGNMENT_PROMPT_TEMPLATE);
     const [summaryPrompt, setSummaryPrompt] = useState(SUMMARY_PROMPT_TEMPLATE);
+
+    const [localLlmConfig, setLocalLlmConfig] = useState<LocalLlmConfig>({
+        url: 'http://127.0.0.1:8080/v1/chat/completions',
+        model: 'local-model'
+    });
 
 
     const handleLoadTasks = useCallback(async () => {
@@ -70,8 +75,8 @@ const App: React.FC = () => {
         try {
             const goalsList = annualGoalsRaw.split('\n').filter(g => g.trim() !== '');
             
-            const assignments: AssignmentResult[] = await assignAndSummarizeTasks(goalsList, jiraTasks, assignmentPrompt);
-
+            const assignments: AssignmentResult[] = await localLlmService.assignAndSummarizeTasks(goalsList, jiraTasks, assignmentPrompt, localLlmConfig);
+            
             const goalPromises = goalsList.map(async (goalText, index) => {
                 const assignedTasksInfo = assignments.filter(a => a.assignedGoalId === index);
                 const tasksForThisGoal = assignedTasksInfo.map(a => {
@@ -85,7 +90,7 @@ const App: React.FC = () => {
                 let annualSummary = "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań.";
                 if (tasksForThisGoal.length > 0) {
                     const taskSummaries = tasksForThisGoal.map(t => `${t.summary}: ${t.goalContextSummary}`);
-                    annualSummary = await generateAnnualSummary(goalText, taskSummaries, summaryPrompt);
+                    annualSummary = await localLlmService.generateAnnualSummary(goalText, taskSummaries, summaryPrompt, localLlmConfig);
                 }
 
                 return {
@@ -106,7 +111,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [annualGoalsRaw, jiraTasks, assignmentPrompt, summaryPrompt]);
+    }, [annualGoalsRaw, jiraTasks, assignmentPrompt, summaryPrompt, localLlmConfig]);
 
     const canProcess = annualGoalsRaw.trim().length > 0 && jiraTasks.length > 0;
 
@@ -144,6 +149,8 @@ const App: React.FC = () => {
                                 summaryPrompt={summaryPrompt}
                                 setSummaryPrompt={setSummaryPrompt}
                                 disabled={isLoading}
+                                localLlmConfig={localLlmConfig}
+                                setLocalLlmConfig={setLocalLlmConfig}
                             />
                              <div className="mt-auto pt-8">
                                 <Button onClick={handleProcess} disabled={!canProcess || isLoading} className="w-full">
