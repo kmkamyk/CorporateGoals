@@ -127,10 +127,34 @@ export const assignAndSummarizeTasks = async (
     const responseContent = await callLocalLlmStream(prompt, config, true);
     
     try {
-        const jsonMatch = responseContent.match(/```json\n([\s\S]*?)\n```|(\[[\s\S]*?\]|{[\s\S]*?})/);
-        const jsonString = jsonMatch ? (jsonMatch[1] || jsonMatch[2]) : responseContent;
+        // More robust JSON extraction
+        const firstBracket = responseContent.indexOf('[');
+        const firstBrace = responseContent.indexOf('{');
+        
+        let startIndex = -1;
+        
+        if (firstBracket === -1) startIndex = firstBrace;
+        else if (firstBrace === -1) startIndex = firstBracket;
+        else startIndex = Math.min(firstBracket, firstBrace);
+
+        if (startIndex === -1) {
+            throw new Error("Nie znaleziono początku obiektu JSON ([ lub {) w odpowiedzi AI.");
+        }
+
+        const isArray = responseContent[startIndex] === '[';
+        const lastBracket = responseContent.lastIndexOf(']');
+        const lastBrace = responseContent.lastIndexOf('}');
+        
+        let endIndex = isArray ? lastBracket : lastBrace;
+
+        if (endIndex === -1) {
+             throw new Error("Nie znaleziono końca obiektu JSON (] lub }) w odpowiedzi AI.");
+        }
+
+        const jsonString = responseContent.substring(startIndex, endIndex + 1);
 
         const result = JSON.parse(jsonString);
+
          if (!Array.isArray(result)) {
             // Some models might wrap the array in an object, e.g., { "assignments": [...] }
             // Let's try to find an array within the object.
