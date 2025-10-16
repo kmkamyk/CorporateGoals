@@ -1,0 +1,166 @@
+#!/bin/bash
+
+# ==============================================================================
+# Skrypt instalacyjny dla Corporate Goals Dashboard (wersja dla Red Hat)
+#
+# Ten skrypt wykonuje następujące czynności:
+# 1. Sprawdza uprawnienia roota.
+# 2. Instaluje wymagane oprogramowanie (Nginx, Node.js, npm, curl).
+# 3. Buduje statyczną wersję aplikacji React/TypeScript przy użyciu esbuild.
+# 4. Konfiguruje Nginx do serwowania aplikacji na porcie 8080.
+# 5. Otwiera port 8080 w zaporze sieciowej (firewalld).
+# 6. Ustawia poprawny kontekst SELinux dla plików aplikacji.
+# 7. Uruchamia serwer Nginx z nową konfiguracją.
+#
+# Użycie:
+# 1. Zapisz ten plik jako 'install.sh'.
+# 2. Nadaj mu uprawnienia do wykonania: chmod +x install.sh
+# 3. Uruchom skrypt z uprawnieniami sudo: sudo ./install.sh
+# ==============================================================================
+
+# Zatrzymaj skrypt w przypadku błędu
+set -euo pipefail
+
+# --- Krok 1: Sprawdzenie uprawnień ---
+echo "INFO: Sprawdzanie uprawnień administratora..."
+if [ "$EUID" -ne 0 ]; then
+  echo "BŁĄD: Ten skrypt musi być uruchomiony z uprawnieniami roota. Użyj 'sudo'."
+  exit 1
+fi
+echo "INFO: Uprawnienia administratora zweryfikowane."
+
+# --- Krok 2: Instalacja zależności ---
+echo "INFO: Aktualizowanie systemu i instalacja zależności..."
+dnf -y update
+
+echo "INFO: Sprawdzanie i instalacja Nginx..."
+if ! command -v nginx &> /dev/null; then
+    echo "INFO: Nginx nie znaleziony. Instalowanie..."
+    dnf install -y nginx
+else
+    echo "INFO: Nginx jest już zainstalowany."
+fi
+
+echo "INFO: Sprawdzanie i instalacja Node.js i npm..."
+if ! command -v node &> /dev/null; then
+    echo "INFO: Node.js nie znaleziony. Instalowanie..."
+    # Instalacja narzędzia curl, jeśli jest potrzebne
+    if ! command -v curl &> /dev/null; then
+        dnf install -y curl
+    fi
+    # Instalacja Node.js 20.x z repozytorium NodeSource dla systemów RPM
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+    dnf install -y nodejs
+else
+    echo "INFO: Node.js jest już zainstalowany. Wersja: $(node -v)"
+fi
+
+# --- Krok 3: Budowanie aplikacji ---
+echo "INFO: Inicjowanie projektu Node.js i instalacja zależności..."
+# Inicjalizuje package.json, jeśli nie istnieje
+npm init -y > /dev/null 2>&1
+
+# Instaluje pakiety potrzebne do budowy
+npm install react react-dom esbuild
+
+echo "INFO: Budowanie aplikacji przy użyciu esbuild..."
+# Utworzenie katalogu na zbudowane pliki
+mkdir -p dist
+
+# Uruchomienie esbuild do spakowania aplikacji do jednego pliku JS
+./node_modules/.bin/esbuild index.tsx --bundle --outfile=dist/bundle.js --jsx=automatic --loader:.ts=tsx
+
+echo "INFO: Aplikacja została pomyślnie zbudowana w katalogu 'dist'."
+
+# --- Krok 4: Tworzenie pliku index.html dla produkcji ---
+echo "INFO: Tworzenie pliku dist/index.html..."
+cat > dist/index.html <<'EOF'
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corporate Goals Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f0f2f5;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script src="/bundle.js"></script>
+</body>
+</html>
+EOF
+
+# --- Krok 5: Konfiguracja Nginx ---
+echo "INFO: Konfigurowanie Nginx..."
+
+# Zmienna przechowująca ścieżkę do zbudowanych plików aplikacji
+PROJECT_ROOT=$(pwd)
+NGINX_CONF_PATH="/etc/nginx/conf.d/corporate-dashboard.conf"
+
+echo "INFO: Tworzenie pliku konfiguracyjnego Nginx w ${NGINX_CONF_PATH}..."
+
+# Tworzenie konfiguracji Nginx za pomocą heredoc
+cat > "$NGINX_CONF_PATH" <<EOF
+server {
+    listen 8080;
+    listen [::]:8080;
+
+    server_name _;
+
+    root ${PROJECT_ROOT}/dist;
+    index index.html;
+
+    location / {
+        # Obsługa routingu dla aplikacji jednostronicowych (SPA)
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # Dodatkowe nagłówki bezpieczeństwa
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+    add_header X-XSS-Protection "1; mode=block";
+}
+EOF
+
+# --- Krok 6: Konfiguracja zapory sieciowej i SELinux ---
+echo "INFO: Konfigurowanie zapory sieciowej (firewalld)..."
+if systemctl is-active --quiet firewalld; then
+    firewall-cmd --zone=public --add-port=8080/tcp --permanent
+    firewall-cmd --reload
+    echo "INFO: Port 8080 został otwarty w zaporze sieciowej."
+else
+    echo "OSTRZEŻENIE: Usługa firewalld nie jest aktywna. Pomijanie konfiguracji zapory."
+fi
+
+echo "INFO: Ustawianie kontekstu SELinux dla plików aplikacji..."
+# Ta komenda zapobiega błędom "permission denied" ze strony Nginx
+chcon -t httpd_sys_content_t -R "${PROJECT_ROOT}/dist"
+
+# --- Krok 7: Aktywacja konfiguracji i restart Nginx ---
+echo "INFO: Aktywowanie usługi Nginx i testowanie konfiguracji..."
+systemctl enable nginx
+
+if nginx -t; then
+    echo "INFO: Konfiguracja Nginx jest poprawna."
+    echo "INFO: Restartowanie serwera Nginx..."
+    systemctl restart nginx
+else
+    echo "BŁĄD: Test konfiguracji Nginx nie powiódł się. Sprawdź plik ${NGINX_CONF_PATH}."
+    exit 1
+fi
+
+# --- Zakończenie ---
+echo ""
+echo "============================================================"
+echo "Instalacja zakończona pomyślnie!"
+echo ""
+echo "Aplikacja jest dostępna pod adresem: http://<TWOJ_ADRES_IP>:8080"
+echo "============================================================"
+echo ""
+
+exit 0

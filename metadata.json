@@ -1,0 +1,5 @@
+{
+  "name": "Corporate Goals Dashboard",
+  "description": "An application to manage annual corporate goals by automatically assigning completed JIRA tasks to them using AI, helping to generate annual summary reports.",
+  "requestFramePermissions": []
+}
