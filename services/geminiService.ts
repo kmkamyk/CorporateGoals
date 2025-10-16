@@ -1,105 +1,111 @@
+import { GoogleGenAI, Type } from "@google/genai";
 import { JiraTask, AssignmentResult } from '../types';
 
+// Per coding guidelines, initialize GoogleGenAI.
+// The API key is expected to be in process.env.API_KEY.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+
 /**
- * Sends a request to a local LLM endpoint compatible with the OpenAI Chat Completions API format.
- * @param url - The URL of the local LLM API endpoint.
- * @param prompt - The prompt to send to the model.
- * @param isJson - Whether to request a JSON object as the response format.
- * @returns The response data from the API.
+ * Replaces placeholders in a prompt template with actual data.
  */
-const fetchFromLocalLlm = async (url: string, prompt: string, isJson: boolean) => {
-    try {
-        const body: any = {
-            messages: [{ role: 'user', content: prompt }],
-            temperature: isJson ? 0.2 : 0.7,
-        };
-        // Use response_format if the local model supports it (increases reliability for JSON).
-        if (isJson) {
-            body.response_format = { type: 'json_object' };
-        }
-
-        const apiResponse = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(body),
-        });
-
-        if (!apiResponse.ok) {
-            const errorBody = await apiResponse.text();
-            throw new Error(`API request failed with status ${apiResponse.status}: ${errorBody}`);
-        }
-
-        const data = await apiResponse.json();
-        const content = data.choices?.[0]?.message?.content;
-
-        if (!content) {
-             throw new Error("AI response did not contain the expected content.");
-        }
-        return content;
-
-    } catch (e) {
-        console.error("Failed to fetch or parse local LLM response:", e);
-        if (e instanceof Error) {
-            throw new Error(`AI processing failed: ${e.message}`);
-        }
-        throw new Error("An unknown error occurred while communicating with the local LLM.");
+const fillPromptTemplate = (template: string, data: Record<string, string>): string => {
+    let filledTemplate = template;
+    for (const key in data) {
+        filledTemplate = filledTemplate.replace(new RegExp(`{{${key}}}`, 'g'), data[key]);
     }
-}
+    return filledTemplate;
+};
 
 /**
- * Assigns JIRA tasks to annual goals using a local LLM.
- * @param goals - An array of annual goal strings.
- * @param tasks - An array of JIRA task objects.
- * @param assignmentPromptTemplate - The prompt template for the assignment task.
- * @param localLlmUrl - The URL of the local LLM endpoint.
- * @returns A promise that resolves to an array of assignment results.
+ * Assigns Jira tasks to annual goals and generates contextual summaries for each using Gemini.
  */
 export const assignAndSummarizeTasks = async (
-    goals: string[], 
+    goals: string[],
     tasks: JiraTask[],
-    assignmentPromptTemplate: string,
-    localLlmUrl: string,
+    promptTemplate: string
 ): Promise<AssignmentResult[]> => {
-    const goalText = goals.map((goal, index) => `GOAL_ID ${index}: "${goal}"`).join('\n');
-    const taskText = tasks.map(task => `TASK_ID "${task.id}":\nSummary: ${task.summary}\nDescription: ${task.description}`).join('\n\n');
+    
+    const goalsString = goals.map((goal, index) => `${index}: ${goal}`).join('\n');
+    const tasksString = JSON.stringify(tasks.map(task => ({
+        id: task.id,
+        summary: task.summary,
+        description: task.description
+    })), null, 2);
 
-    const prompt = assignmentPromptTemplate
-        .replace('{{goals}}', goalText)
-        .replace('{{tasks}}', taskText);
-    
-    const jsonText = await fetchFromLocalLlm(localLlmUrl, prompt, true);
-    
+    const prompt = fillPromptTemplate(promptTemplate, { goals: goalsString, tasks: tasksString });
+
     try {
-        const jsonResponse = JSON.parse(jsonText);
-        return jsonResponse as AssignmentResult[];
-    } catch (e) {
-        console.error("Failed to parse LLM JSON response:", jsonText);
-        throw new Error("AI returned an invalid JSON format.");
+        // Use Gemini API to generate content with a specific JSON schema
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            taskId: { type: Type.STRING },
+                            assignedGoalId: { type: Type.NUMBER },
+                            contextualSummary: { type: Type.STRING }
+                        },
+                        required: ["taskId", "assignedGoalId", "contextualSummary"]
+                    }
+                }
+            }
+        });
+
+        const jsonText = response.text.trim();
+        // The Gemini API with responseSchema should return valid JSON, but parsing is still a good practice.
+        const result = JSON.parse(jsonText);
+
+        if (!Array.isArray(result)) {
+            throw new Error("AI response is not a valid JSON array.");
+        }
+        
+        return result as AssignmentResult[];
+
+    } catch (error) {
+        console.error("Error calling Gemini API for task assignment:", error);
+        let message = 'An unknown error occurred.';
+        if (error instanceof Error) {
+            message = error.message;
+        } else if (typeof error === 'string') {
+            message = error;
+        }
+        throw new Error(`Failed to assign tasks using AI: ${message}`);
     }
 };
 
 /**
- * Generates an annual summary for a goal using a local LLM.
- * @param goal - The annual goal string.
- * @param taskSummaries - An array of contextual summaries for tasks assigned to this goal.
- * @param summaryPromptTemplate - The prompt template for the summary task.
- * @param localLlmUrl - The URL of the local LLM endpoint.
- * @returns A promise that resolves to a two-paragraph summary string.
+ * Generates a comprehensive annual summary for a single goal based on task summaries using Gemini.
  */
 export const generateAnnualSummary = async (
-    goal: string, 
+    goal: string,
     taskSummaries: string[],
-    summaryPromptTemplate: string,
-    localLlmUrl: string
+    promptTemplate: string
 ): Promise<string> => {
-    const summariesText = taskSummaries.map(s => `- ${s}`).join('\n');
-
-    const prompt = summaryPromptTemplate
-        .replace('{{goal}}', goal)
-        .replace('{{summaries}}', summariesText);
     
-    const summaryText = await fetchFromLocalLlm(localLlmUrl, prompt, false);
-    return summaryText.trim();
+    const summariesString = taskSummaries.map(s => `- ${s}`).join('\n');
+    const prompt = fillPromptTemplate(promptTemplate, { goal: goal, summaries: summariesString });
+
+    try {
+        // Use Gemini API for text generation
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt
+        });
+
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error calling Gemini API for annual summary:", error);
+        let message = 'An unknown error occurred.';
+        if (error instanceof Error) {
+            message = error.message;
+        } else if (typeof error === 'string') {
+            message = error;
+        }
+        throw new Error(`Failed to generate annual summary using AI: ${message}`);
+    }
 };

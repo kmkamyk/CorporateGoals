@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { Card } from './common';
 import { CogIcon } from './icons';
 
+// Fix: Remove props related to local LLM as we are using Gemini API
 interface AIConfigurationProps {
-    localLlmUrl: string;
-    setLocalLlmUrl: (url: string) => void;
     assignmentPrompt: string;
     setAssignmentPrompt: (prompt: string) => void;
     summaryPrompt: string;
@@ -13,8 +12,6 @@ interface AIConfigurationProps {
 }
 
 export const AIConfiguration: React.FC<AIConfigurationProps> = ({
-    localLlmUrl,
-    setLocalLlmUrl,
     assignmentPrompt,
     setAssignmentPrompt,
     summaryPrompt,
@@ -46,21 +43,7 @@ export const AIConfiguration: React.FC<AIConfigurationProps> = ({
             
             {isOpen && (
                 <div className="mt-6 space-y-6">
-                    {/* Local LLM URL Input */}
-                    <div>
-                        <label htmlFor="localLlmUrl" className="block text-sm font-medium text-gray-700">Adres API lokalnego LLM</label>
-                        <input
-                            type="text"
-                            name="localLlmUrl"
-                            id="localLlmUrl"
-                            value={localLlmUrl}
-                            onChange={(e) => setLocalLlmUrl(e.target.value)}
-                            disabled={disabled}
-                            placeholder="http://localhost:8080/v1/chat/completions"
-                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-gray-50 disabled:bg-gray-100"
-                        />
-                         <p className="text-xs text-gray-500 mt-1">Podaj adres URL do API Twojego lokalnego modelu (np. z serwera llama.cpp).</p>
-                    </div>
+                    {/* Fix: Remove local LLM URL configuration section */}
                     
                     {/* Prompt Templates */}
                     <div>

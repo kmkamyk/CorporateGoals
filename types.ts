@@ -1,4 +1,3 @@
-
 export interface JiraTask {
     id: string;
     summary: string;
@@ -31,3 +30,5 @@ export interface AssignmentResult {
     assignedGoalId: number;
     contextualSummary: string;
 }
+
+export type DataSourceMode = 'mock' | 'jira' | 'manual';

@@ -1,12 +1,12 @@
 import React, { useState, useCallback } from 'react';
-import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult } from './types';
+import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult, DataSourceMode } from './types';
 import { GoalInput } from './components/GoalInput';
 import { JiraConnect } from './components/JiraConnect';
 import { SummaryDisplay } from './components/SummaryDisplay';
 import { AIConfiguration } from './components/AIConfiguration';
 import { Button } from './components/common';
 import { assignAndSummarizeTasks, generateAnnualSummary } from './services/geminiService';
-import { fetchCompletedTasksMock, fetchRealCompletedTasks } from './services/jiraService';
+import { fetchCompletedTasksMock, fetchRealCompletedTasks, parseManualTasks } from './services/jiraService';
 import { SparklesIcon } from './components/icons';
 import { ASSIGNMENT_PROMPT_TEMPLATE, SUMMARY_PROMPT_TEMPLATE } from './prompts';
 
@@ -21,34 +21,46 @@ const App: React.FC = () => {
         user: 'your.email@example.com',
         token: ''
     });
-    const [useMockData, setUseMockData] = useState(true);
+    const [dataSourceMode, setDataSourceMode] = useState<DataSourceMode>('mock');
+    const [manualTasksRaw, setManualTasksRaw] = useState('');
 
-    // AI configuration state, now only for local LLM
-    const [localLlmUrl, setLocalLlmUrl] = useState('http://localhost:8080/v1/chat/completions');
     const [assignmentPrompt, setAssignmentPrompt] = useState(ASSIGNMENT_PROMPT_TEMPLATE);
     const [summaryPrompt, setSummaryPrompt] = useState(SUMMARY_PROMPT_TEMPLATE);
 
 
-    const handleFetchJiraTasks = useCallback(async () => {
+    const handleLoadTasks = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         setJiraTasks([]);
         try {
-            const fetcher = useMockData ? fetchCompletedTasksMock : () => fetchRealCompletedTasks(jiraCredentials);
-            const tasks = await fetcher();
+            let tasks: JiraTask[] = [];
+            switch (dataSourceMode) {
+                case 'mock':
+                    tasks = await fetchCompletedTasksMock();
+                    break;
+                case 'jira':
+                    tasks = await fetchRealCompletedTasks(jiraCredentials);
+                    break;
+                case 'manual':
+                    tasks = parseManualTasks(manualTasksRaw);
+                    if (tasks.length === 0) {
+                        throw new Error("Nie wprowadzono żadnych zadań lub tekst jest w nieprawidłowym formacie.");
+                    }
+                    break;
+            }
             setJiraTasks(tasks);
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Wystąpił nieznany błąd.';
-            setError(`Nie udało się pobrać zadań z JIRA: ${errorMessage}`);
+            setError(`Nie udało się załadować zadań: ${errorMessage}`);
             console.error(e);
         } finally {
             setIsLoading(false);
         }
-    }, [useMockData, jiraCredentials]);
+    }, [dataSourceMode, jiraCredentials, manualTasksRaw]);
 
     const handleProcess = useCallback(async () => {
         if (!annualGoalsRaw.trim() || jiraTasks.length === 0) {
-            setError('Wprowadź cele roczne i pobierz zadania z JIRA przed przetworzeniem.');
+            setError('Wprowadź cele roczne i załaduj zadania przed przetworzeniem.');
             return;
         }
         setIsLoading(true);
@@ -58,10 +70,8 @@ const App: React.FC = () => {
         try {
             const goalsList = annualGoalsRaw.split('\n').filter(g => g.trim() !== '');
             
-            // Step 1: Assign tasks to goals and generate contextual summaries
-            const assignments: AssignmentResult[] = await assignAndSummarizeTasks(goalsList, jiraTasks, assignmentPrompt, localLlmUrl);
+            const assignments: AssignmentResult[] = await assignAndSummarizeTasks(goalsList, jiraTasks, assignmentPrompt);
 
-            // Step 2: Group tasks by goal and generate annual summaries
             const goalPromises = goalsList.map(async (goalText, index) => {
                 const assignedTasksInfo = assignments.filter(a => a.assignedGoalId === index);
                 const tasksForThisGoal = assignedTasksInfo.map(a => {
@@ -75,7 +85,7 @@ const App: React.FC = () => {
                 let annualSummary = "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań.";
                 if (tasksForThisGoal.length > 0) {
                     const taskSummaries = tasksForThisGoal.map(t => `${t.summary}: ${t.goalContextSummary}`);
-                    annualSummary = await generateAnnualSummary(goalText, taskSummaries, summaryPrompt, localLlmUrl);
+                    annualSummary = await generateAnnualSummary(goalText, taskSummaries, summaryPrompt);
                 }
 
                 return {
@@ -96,7 +106,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [annualGoalsRaw, jiraTasks, assignmentPrompt, summaryPrompt, localLlmUrl]);
+    }, [annualGoalsRaw, jiraTasks, assignmentPrompt, summaryPrompt]);
 
     const canProcess = annualGoalsRaw.trim().length > 0 && jiraTasks.length > 0;
 
@@ -120,15 +130,15 @@ const App: React.FC = () => {
                             <JiraConnect
                                 credentials={jiraCredentials}
                                 setCredentials={setJiraCredentials}
-                                onFetch={handleFetchJiraTasks}
+                                onFetch={handleLoadTasks}
                                 tasks={jiraTasks}
                                 disabled={isLoading}
-                                useMockData={useMockData}
-                                setUseMockData={setUseMockData}
+                                dataSourceMode={dataSourceMode}
+                                setDataSourceMode={setDataSourceMode}
+                                manualTasksRaw={manualTasksRaw}
+                                setManualTasksRaw={setManualTasksRaw}
                             />
                             <AIConfiguration
-                                localLlmUrl={localLlmUrl}
-                                setLocalLlmUrl={setLocalLlmUrl}
                                 assignmentPrompt={assignmentPrompt}
                                 setAssignmentPrompt={setAssignmentPrompt}
                                 summaryPrompt={summaryPrompt}
