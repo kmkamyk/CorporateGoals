@@ -22,7 +22,7 @@ export interface ProcessedGoal extends AnnualGoal {
 
 export interface JiraCredentials {
     domain: string;
-    email: string;
+    user: string; // Changed from email
     token: string;
 }
 

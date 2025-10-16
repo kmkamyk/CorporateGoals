@@ -1,8 +1,95 @@
+import { JiraCredentials, JiraTask } from '../types';
 
-import { JiraTask } from '../types';
+// Helper to safely extract plain text from Atlassian Document Format (ADF)
+const extractTextFromADF = (adf: any): string => {
+    if (!adf || !adf.content) {
+        return '';
+    }
+    let text = '';
+    const recurse = (nodes: any[]) => {
+        for (const node of nodes) {
+            if (node.type === 'text' && node.text) {
+                text += node.text;
+            }
+            if (node.content) {
+                recurse(node.content);
+            }
+        }
+    };
+    recurse(adf.content);
+    return text.trim();
+};
 
-// This is a mock service. In a real application, this would make an API call to JIRA.
-export const fetchCompletedTasks = async (): Promise<JiraTask[]> => {
+
+/**
+ * Fetches completed tasks from the real JIRA API.
+ * @param creds - The user's JIRA credentials.
+ * @returns A promise that resolves to an array of JIRA tasks.
+ */
+export const fetchRealCompletedTasks = async (creds: JiraCredentials): Promise<JiraTask[]> => {
+    if (!creds.domain || !creds.user || !creds.token) {
+        throw new Error("Domena JIRA, użytkownik i token API są wymagane.");
+    }
+
+    const apiUrl = `https://${creds.domain}/rest/api/3/search`;
+    
+    // Encode credentials for Basic Authentication
+    const headers = new Headers();
+    headers.append('Authorization', `Basic ${btoa(`${creds.user}:${creds.token}`)}`);
+    headers.append('Content-Type', 'application/json');
+    headers.append('Accept', 'application/json');
+
+    // JQL to get tasks with status 'Done', ordered by last updated date
+    const body = JSON.stringify({
+        jql: 'status = Done ORDER BY updated DESC',
+        fields: ['summary', 'description', 'resolutiondate'],
+        maxResults: 50, // Limit to 50 tasks to avoid huge responses
+    });
+
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: headers,
+            body: body,
+        });
+
+        if (!response.ok) {
+            let errorMsg = `Błąd API JIRA: ${response.status} ${response.statusText}.`;
+            if (response.status === 401) {
+                errorMsg += " Sprawdź poprawność emaila i tokenu API.";
+            } else if (response.status === 404) {
+                 errorMsg += " Nie znaleziono instancji JIRA pod podaną domeną. Upewnij się, że domena jest poprawna.";
+            } else {
+                 const errorData = await response.json();
+                 errorMsg += ` ${JSON.stringify(errorData.errorMessages)}`;
+            }
+            throw new Error(errorMsg);
+        }
+
+        const data = await response.json();
+        
+        // Map the complex JIRA response to our simple JiraTask type
+        return data.issues.map((issue: any): JiraTask => ({
+            id: issue.key,
+            summary: issue.fields.summary,
+            description: extractTextFromADF(issue.fields.description) || 'Brak opisu.', // Handle ADF format for description
+            completionDate: issue.fields.resolutiondate ? issue.fields.resolutiondate.split('T')[0] : new Date().toISOString().split('T')[0],
+        }));
+
+    } catch (e) {
+        console.error("Błąd podczas pobierania zadań z JIRA:", e);
+        if (e instanceof Error) {
+            throw e;
+        }
+        throw new Error("Wystąpił nieznany błąd podczas komunikacji z API JIRA.");
+    }
+};
+
+
+/**
+ * Returns a mock list of JIRA tasks.
+ */
+export const fetchCompletedTasksMock = async (): Promise<JiraTask[]> => {
     console.log("Mocking JIRA API call...");
 
     // Simulate network delay

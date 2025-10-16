@@ -6,7 +6,7 @@ import { SummaryDisplay } from './components/SummaryDisplay';
 import { AIConfiguration } from './components/AIConfiguration';
 import { Button } from './components/common';
 import { assignAndSummarizeTasks, generateAnnualSummary } from './services/geminiService';
-import { fetchCompletedTasks as mockFetchJiraTasks } from './services/jiraService';
+import { fetchCompletedTasksMock, fetchRealCompletedTasks } from './services/jiraService';
 import { SparklesIcon } from './components/icons';
 import { ASSIGNMENT_PROMPT_TEMPLATE, SUMMARY_PROMPT_TEMPLATE } from './prompts';
 
@@ -18,9 +18,10 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [jiraCredentials, setJiraCredentials] = useState<JiraCredentials>({
         domain: 'your-company.atlassian.net',
-        email: 'your.email@example.com',
+        user: 'your.email@example.com',
         token: ''
     });
+    const [useMockData, setUseMockData] = useState(true);
 
     // AI configuration state, now only for local LLM
     const [localLlmUrl, setLocalLlmUrl] = useState('http://localhost:8080/v1/chat/completions');
@@ -31,16 +32,19 @@ const App: React.FC = () => {
     const handleFetchJiraTasks = useCallback(async () => {
         setIsLoading(true);
         setError(null);
+        setJiraTasks([]);
         try {
-            const tasks = await mockFetchJiraTasks();
+            const fetcher = useMockData ? fetchCompletedTasksMock : () => fetchRealCompletedTasks(jiraCredentials);
+            const tasks = await fetcher();
             setJiraTasks(tasks);
         } catch (e) {
-            setError('Nie udało się pobrać zadań z JIRA. Spróbuj ponownie.');
+            const errorMessage = e instanceof Error ? e.message : 'Wystąpił nieznany błąd.';
+            setError(`Nie udało się pobrać zadań z JIRA: ${errorMessage}`);
             console.error(e);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [useMockData, jiraCredentials]);
 
     const handleProcess = useCallback(async () => {
         if (!annualGoalsRaw.trim() || jiraTasks.length === 0) {
@@ -119,6 +123,8 @@ const App: React.FC = () => {
                                 onFetch={handleFetchJiraTasks}
                                 tasks={jiraTasks}
                                 disabled={isLoading}
+                                useMockData={useMockData}
+                                setUseMockData={setUseMockData}
                             />
                             <AIConfiguration
                                 localLlmUrl={localLlmUrl}
