@@ -26,6 +26,8 @@ const App: React.FC = () => {
 
     const [assignmentPrompt, setAssignmentPrompt] = useState(ASSIGNMENT_PROMPT_TEMPLATE);
     const [summaryPrompt, setSummaryPrompt] = useState(SUMMARY_PROMPT_TEMPLATE);
+    
+    const [streamingSummary, setStreamingSummary] = useState<{ goalId: number; text: string } | null>(null);
 
     const [localLlmConfig, setLocalLlmConfig] = useState<LocalLlmConfig>({
         url: 'http://127.0.0.1:8080/v1/chat/completions',
@@ -71,38 +73,62 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         setProcessedGoals(null);
+        setStreamingSummary(null);
 
         try {
             const goalsList = annualGoalsRaw.split('\n').filter(g => g.trim() !== '');
             
+            // Step 1: Assign tasks (non-streaming for UI, but uses streaming backend)
             const assignments: AssignmentResult[] = await localLlmService.assignAndSummarizeTasks(goalsList, jiraTasks, assignmentPrompt, localLlmConfig);
             
-            const goalPromises = goalsList.map(async (goalText, index) => {
-                const assignedTasksInfo = assignments.filter(a => a.assignedGoalId === index);
-                const tasksForThisGoal = assignedTasksInfo.map(a => {
-                    const originalTask = jiraTasks.find(t => t.id === a.taskId);
-                    return {
-                        ...originalTask!,
-                        goalContextSummary: a.contextualSummary
-                    };
-                });
-                
-                let annualSummary = "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań.";
-                if (tasksForThisGoal.length > 0) {
-                    const taskSummaries = tasksForThisGoal.map(t => `${t.summary}: ${t.goalContextSummary}`);
-                    annualSummary = await localLlmService.generateAnnualSummary(goalText, taskSummaries, summaryPrompt, localLlmConfig);
+            // Initialize goals structure
+            const initialGoals: ProcessedGoal[] = goalsList.map((goalText, index) => ({
+                id: index,
+                text: goalText,
+                tasks: assignments
+                    .filter(a => a.assignedGoalId === index)
+                    .map(a => {
+                        const originalTask = jiraTasks.find(t => t.id === a.taskId);
+                        return {
+                            ...originalTask!,
+                            goalContextSummary: a.contextualSummary
+                        };
+                    }),
+                annualSummary: "..." // Placeholder
+            }));
+            
+            setProcessedGoals(initialGoals);
+
+            // Step 2: Generate summaries sequentially with streaming
+            const finalResults: ProcessedGoal[] = [];
+            for (const goal of initialGoals) {
+                 if (goal.tasks.length > 0) {
+                    const taskSummaries = goal.tasks.map(t => `${t.summary}: ${t.goalContextSummary}`);
+                    
+                    setStreamingSummary({ goalId: goal.id, text: '' }); // Start streaming for this goal
+                    
+                    const finalSummary = await localLlmService.generateAnnualSummary(
+                        goal.text,
+                        taskSummaries,
+                        summaryPrompt,
+                        localLlmConfig,
+                        (chunk) => {
+                             setStreamingSummary(prev => {
+                                if (prev && prev.goalId === goal.id) {
+                                    return { ...prev, text: prev.text + chunk };
+                                }
+                                return prev;
+                            });
+                        }
+                    );
+                    finalResults.push({ ...goal, annualSummary: finalSummary });
+                } else {
+                     finalResults.push({ ...goal, annualSummary: "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań." });
                 }
+                 setProcessedGoals([...finalResults, ...initialGoals.slice(finalResults.length)]); // Update with final summary
+            }
 
-                return {
-                    id: index,
-                    text: goalText,
-                    tasks: tasksForThisGoal,
-                    annualSummary: annualSummary
-                };
-            });
-
-            const results = await Promise.all(goalPromises);
-            setProcessedGoals(results);
+            setStreamingSummary(null); // End of all streaming
 
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Wystąpił nieznany błąd.';
@@ -167,6 +193,7 @@ const App: React.FC = () => {
                              isLoading={isLoading}
                              error={error}
                              hasInputs={canProcess}
+                             streamingSummary={streamingSummary}
                            />
                         </div>
                     </div>

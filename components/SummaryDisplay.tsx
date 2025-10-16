@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { ProcessedGoal } from '../types';
 import { Card, Spinner } from './common';
@@ -9,10 +10,29 @@ interface SummaryDisplayProps {
     isLoading: boolean;
     error: string | null;
     hasInputs: boolean;
+    streamingSummary: { goalId: number; text: string } | null;
 }
 
-const GoalAccordion: React.FC<{ goal: ProcessedGoal }> = ({ goal }) => {
+const BlinkingCursor = () => (
+    <span className="inline-block w-2 h-4 bg-gray-600 animate-pulse ml-1" />
+);
+
+const GoalAccordion: React.FC<{ goal: ProcessedGoal; isStreaming: boolean; streamingText: string; }> = ({ goal, isStreaming, streamingText }) => {
     const [isOpen, setIsOpen] = useState(true);
+    
+    const renderSummary = () => {
+        const textToRender = isStreaming ? streamingText : goal.annualSummary;
+        const paragraphs = textToRender.split('\n').filter(p => p.trim() !== '');
+
+        return (
+            <>
+                {paragraphs.map((paragraph, i) => (
+                    <p key={i} className="mb-2 last:mb-0">{paragraph}</p>
+                ))}
+                {isStreaming && <BlinkingCursor />}
+            </>
+        );
+    }
 
     return (
         <div className="border border-gray-200 rounded-lg mb-4 bg-white">
@@ -37,7 +57,7 @@ const GoalAccordion: React.FC<{ goal: ProcessedGoal }> = ({ goal }) => {
                 <div className="p-4 border-t border-gray-200">
                     <h4 className="text-md font-semibold text-gray-700 mb-2">Podsumowanie roczne działań</h4>
                     <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap">
-                        {goal.annualSummary.split('\n\n').map((paragraph, i) => <p key={i}>{paragraph}</p>)}
+                        {renderSummary()}
                     </div>
                     
                     <h4 className="text-md font-semibold text-gray-700 mt-6 mb-2">Przypisane zadania ({goal.tasks.length})</h4>
@@ -56,9 +76,37 @@ const GoalAccordion: React.FC<{ goal: ProcessedGoal }> = ({ goal }) => {
     );
 };
 
-export const SummaryDisplay: React.FC<SummaryDisplayProps> = ({ goals, isLoading, error, hasInputs }) => {
+export const SummaryDisplay: React.FC<SummaryDisplayProps> = ({ goals, isLoading, error, hasInputs, streamingSummary }) => {
+    
+    const renderError = () => {
+        const errorMarker = "Otrzymano następującą odpowiedź:\n\n";
+        if (error && error.includes(errorMarker)) {
+            const parts = error.split(errorMarker);
+            const mainError = parts[0];
+            const rawResponse = parts[1];
+            return (
+                <div className="text-left">
+                     <p className="font-semibold text-red-700">Wystąpił błąd</p>
+                     <p className="mt-2 text-sm text-red-600">{mainError}</p>
+                     <div className="mt-4">
+                        <h4 className="text-sm font-semibold text-gray-800">Otrzymana surowa odpowiedź od AI:</h4>
+                        <pre className="mt-2 p-3 bg-gray-100 text-gray-700 rounded-md text-xs whitespace-pre-wrap max-h-60 overflow-auto">
+                            <code>{rawResponse}</code>
+                        </pre>
+                     </div>
+                </div>
+            );
+        }
+        return (
+            <div className="text-center">
+                <p className="font-semibold text-red-700">Wystąpił błąd</p>
+                <p className="mt-2 text-sm text-red-600">{error}</p>
+            </div>
+        );
+    };
+
     const renderContent = () => {
-        if (isLoading) {
+        if (isLoading && !goals) { // Show spinner only on initial load
             return (
                 <div className="text-center py-12">
                     <Spinner />
@@ -70,9 +118,8 @@ export const SummaryDisplay: React.FC<SummaryDisplayProps> = ({ goals, isLoading
 
         if (error) {
             return (
-                <div className="text-center py-12 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="font-semibold text-red-700">Wystąpił błąd</p>
-                    <p className="mt-2 text-sm text-red-600">{error}</p>
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    {renderError()}
                 </div>
             );
         }
@@ -80,7 +127,14 @@ export const SummaryDisplay: React.FC<SummaryDisplayProps> = ({ goals, isLoading
         if (goals) {
             return (
                 <div>
-                    {goals.map(goal => <GoalAccordion key={goal.id} goal={goal} />)}
+                    {goals.map(goal => (
+                        <GoalAccordion 
+                            key={goal.id} 
+                            goal={goal}
+                            isStreaming={streamingSummary?.goalId === goal.id}
+                            streamingText={streamingSummary?.goalId === goal.id ? streamingSummary.text : ''}
+                        />
+                    ))}
                 </div>
             );
         }
