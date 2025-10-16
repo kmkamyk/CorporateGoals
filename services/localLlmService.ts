@@ -104,26 +104,24 @@ const callLocalLlmStream = async (
 
 
 /**
- * Assigns Jira tasks to annual goals using a local LLM.
+ * Finds and summarizes Jira tasks relevant to a single annual goal using a local LLM.
  */
-export const assignAndSummarizeTasks = async (
-    goals: string[],
+export const findAndSummarizeTasksForGoal = async (
+    goal: string,
     tasks: JiraTask[],
     promptTemplate: string,
     config: LocalLlmConfig
 ): Promise<AssignmentResult[]> => {
     
-    const goalsString = goals.map((goal, index) => `${index}: ${goal}`).join('\n');
     const tasksString = JSON.stringify(tasks.map(task => ({
         id: task.id,
         summary: task.summary,
         description: task.description
     })), null, 2);
 
-    const prompt = fillPromptTemplate(promptTemplate, { goals: goalsString, tasks: tasksString });
+    const prompt = fillPromptTemplate(promptTemplate, { goal: goal, tasks: tasksString });
 
     // We await the full response here, as we need the complete JSON to proceed.
-    // The UI won't stream this part, but the underlying mechanism is now streaming-capable.
     const responseContent = await callLocalLlmStream(prompt, config, true);
     
     try {
@@ -138,6 +136,8 @@ export const assignAndSummarizeTasks = async (
         else startIndex = Math.min(firstBracket, firstBrace);
 
         if (startIndex === -1) {
+            // It's possible the model returns an empty array `[]` as a valid response
+            if (responseContent.trim() === '[]') return [];
             throw new Error("Nie znaleziono początku obiektu JSON ([ lub {) w odpowiedzi AI.");
         }
 

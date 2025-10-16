@@ -27,7 +27,6 @@ export interface JiraCredentials {
 
 export interface AssignmentResult {
     taskId: string;
-    assignedGoalId: number;
     contextualSummary: string;
 }
 

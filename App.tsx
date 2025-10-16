@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult, DataSourceMode, LocalLlmConfig } from './types';
+import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult, DataSourceMode, LocalLlmConfig, ProcessedTask } from './types';
 import { GoalInput } from './components/GoalInput';
 import { JiraConnect } from './components/JiraConnect';
 import { SummaryDisplay } from './components/SummaryDisplay';
@@ -78,54 +78,73 @@ const App: React.FC = () => {
         try {
             const goalsList = annualGoalsRaw.split('\n').filter(g => g.trim() !== '');
             
-            // Step 1: Assign tasks (non-streaming for UI, but uses streaming backend)
-            const assignments: AssignmentResult[] = await localLlmService.assignAndSummarizeTasks(goalsList, jiraTasks, assignmentPrompt, localLlmConfig);
-            
-            // Initialize goals structure
+            // Initialize goals structure so UI can show placeholders
             const initialGoals: ProcessedGoal[] = goalsList.map((goalText, index) => ({
                 id: index,
                 text: goalText,
-                tasks: assignments
-                    .filter(a => a.assignedGoalId === index)
-                    .map(a => {
-                        const originalTask = jiraTasks.find(t => t.id === a.taskId);
-                        return {
-                            ...originalTask!,
-                            goalContextSummary: a.contextualSummary
-                        };
-                    }),
+                tasks: [],
                 annualSummary: "..." // Placeholder
             }));
-            
             setProcessedGoals(initialGoals);
 
-            // Step 2: Generate summaries sequentially with streaming
             const finalResults: ProcessedGoal[] = [];
-            for (const goal of initialGoals) {
-                 if (goal.tasks.length > 0) {
-                    const taskSummaries = goal.tasks.map(t => `${t.summary}: ${t.goalContextSummary}`);
+
+            // Process each goal sequentially
+            for (const [index, goalText] of goalsList.entries()) {
+                // Step 1: Find and summarize tasks relevant to THIS goal
+                const relevantTaskSummaries: AssignmentResult[] = await localLlmService.findAndSummarizeTasksForGoal(
+                    goalText,
+                    jiraTasks,
+                    assignmentPrompt,
+                    localLlmConfig
+                );
+
+                const processedTasksForGoal: ProcessedTask[] = relevantTaskSummaries.map(summary => {
+                    const originalTask = jiraTasks.find(t => t.id === summary.taskId);
+                    // Handle case where task might not be found, though it shouldn't happen
+                    if (!originalTask) return null;
+                    return {
+                        ...originalTask,
+                        goalContextSummary: summary.contextualSummary
+                    };
+                }).filter((t): t is ProcessedTask => t !== null);
+
+
+                const currentGoalData: ProcessedGoal = {
+                    id: index,
+                    text: goalText,
+                    tasks: processedTasksForGoal,
+                    annualSummary: "..."
+                };
+
+                // Step 2: Generate annual summary for THIS goal based on relevant tasks
+                let finalSummary = "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań.";
+                if (processedTasksForGoal.length > 0) {
+                    const taskSummaries = processedTasksForGoal.map(t => `${t.summary}: ${t.goalContextSummary}`);
                     
-                    setStreamingSummary({ goalId: goal.id, text: '' }); // Start streaming for this goal
+                    setStreamingSummary({ goalId: index, text: '' }); // Start streaming for this goal
                     
-                    const finalSummary = await localLlmService.generateAnnualSummary(
-                        goal.text,
+                    finalSummary = await localLlmService.generateAnnualSummary(
+                        goalText,
                         taskSummaries,
                         summaryPrompt,
                         localLlmConfig,
                         (chunk) => {
                              setStreamingSummary(prev => {
-                                if (prev && prev.goalId === goal.id) {
+                                if (prev && prev.goalId === index) {
                                     return { ...prev, text: prev.text + chunk };
                                 }
                                 return prev;
                             });
                         }
                     );
-                    finalResults.push({ ...goal, annualSummary: finalSummary });
-                } else {
-                     finalResults.push({ ...goal, annualSummary: "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań." });
                 }
-                 setProcessedGoals([...finalResults, ...initialGoals.slice(finalResults.length)]); // Update with final summary
+                
+                currentGoalData.annualSummary = finalSummary;
+                finalResults.push(currentGoalData);
+                
+                // Update UI progressively after each goal is fully processed
+                setProcessedGoals([...finalResults, ...initialGoals.slice(finalResults.length)]);
             }
 
             setStreamingSummary(null); // End of all streaming

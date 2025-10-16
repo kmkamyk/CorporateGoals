@@ -1,22 +1,27 @@
-export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś inteligentnym asystentem do przeprowadzania firmowych ocen pracowniczych. Twoim zadaniem jest przeanalizowanie listy ukończonych zadań z JIRA i przypisanie każdego z nich do najbardziej odpowiedniego celu rocznego. Musisz również przygotować zwięzłe podsumowanie wyjaśniające, w jaki sposób zadanie przyczyniło się do osiągnięcia tego celu.
+export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś inteligentnym asystentem do przeprowadzania firmowych ocen pracowniczych. Twoim zadaniem jest przeanalizowanie poniższej listy ukończonych zadań z JIRA i zidentyfikowanie TYLKO tych, które bezpośrednio przyczyniają się do osiągnięcia JEDNEGO, konkretnego celu rocznego.
 
-Oto cele roczne:
-{{goals}}
+Oto cel roczny, który masz przeanalizować:
+"{{goal}}"
 
-Oto zadania z JIRA do analizy:
+Oto PEŁNA lista zadań z JIRA do analizy. Przejrzyj ją i wybierz tylko te, które pasują do powyższego celu:
 {{tasks}}
 
-Dla każdego zadania z JIRA wykonaj następujące czynności:
-1.  Zidentyfikuj jeden, najbardziej pasujący cel roczny z podanej listy.
-2.  Napisz podsumowanie składające się z 2-3 zdań, które wyjaśnia, *jak* to konkretne zadanie przyczyniło się do osiągnięcia tego celu. Podsumowanie powinno być napisane profesjonalnym tonem, odpowiednim do oceny pracowniczej, w języku polskim.
-3.  Zwróć wynik w formacie JSON. Dane wyjściowe muszą być tablicą obiektów, gdzie każdy obiekt ma klucze: "taskId", "assignedGoalId", "contextualSummary".
+Dla każdego zadania, które uznasz za pasujące do celu, wykonaj następujące czynności:
+1.  Napisz podsumowanie składające się z 2-3 zdań, które wyjaśnia, *jak* to konkretne zadanie przyczyniło się do osiągnięcia tego celu. Podsumowanie powinno być napisane profesjonalnym tonem, odpowiednim do oceny pracowniczej, w języku polskim.
+2.  Zignoruj wszystkie zadania z listy, które nie są istotne dla podanego celu.
+3.  Zwróć wynik w formacie JSON. Dane wyjściowe muszą być tablicą obiektów, gdzie każdy obiekt reprezentuje PASUJĄCE zadanie i ma klucze: "taskId" i "contextualSummary". Jeśli żadne zadanie nie pasuje, zwróć pustą tablicę [].
 
-Twój ostateczny wynik musi zawierać wyłącznie tablicę JSON, bez żadnego innego tekstu przed lub po niej. Przykład obiektu:
-{
-  "taskId": "PROJ-123",
-  "assignedGoalId": 0,
-  "contextualSummary": "Implementacja nowego przepływu uwierzytelniania użytkowników bezpośrednio przyczyniła się do zwiększenia bezpieczeństwa platformy, co było kluczowym elementem celu poprawy wydajności i niezawodności aplikacji."
-}`;
+Twój ostateczny wynik musi zawierać wyłącznie tablicę JSON, bez żadnego innego tekstu przed lub po niej. Przykład formatu wyniku dla dwóch pasujących zadań:
+[
+  {
+    "taskId": "PROJ-123",
+    "contextualSummary": "Implementacja nowego przepływu uwierzytelniania użytkowników bezpośrednio przyczyniła się do zwiększenia bezpieczeństwa platformy, co było kluczowym elementem celu poprawy wydajności i niezawodności aplikacji."
+  },
+  {
+    "taskId": "PROJ-456",
+    "contextualSummary": "Optymalizacja zapytań do bazy danych skróciła czas ładowania raportów, co jest zgodne z celem zwiększenia wydajności aplikacji."
+  }
+]`;
 
 export const SUMMARY_PROMPT_TEMPLATE = `Jesteś ekspertem w pisaniu firmowych ocen pracowniczych. Twoim zadaniem jest zsyntetyzowanie zbioru podsumowań zadań w spójne, dwuakapitowe podsumowanie roczne dla określonego celu. Pisz w języku polskim.
 
