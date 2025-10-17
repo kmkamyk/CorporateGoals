@@ -191,14 +191,24 @@ export const findAndSummarizeTasksForGoal = async (
 
         const result = JSON.parse(jsonString);
 
-         if (!Array.isArray(result)) {
-            const arrayInResult = Object.values(result).find(Array.isArray);
-            if (arrayInResult) {
-                return arrayInResult as AssignmentResult[];
-            }
-            throw new Error("Odpowiedź AI (po parsowaniu) nie jest prawidłową tablicą JSON.");
+        // If the result is already a valid array, return it.
+        if (Array.isArray(result)) {
+            return result as AssignmentResult[];
         }
-        return result as AssignmentResult[];
+
+        // If the result is a single object (with the required keys), wrap it in an array.
+        // This handles cases where the LLM returns one item as an object instead of a single-item array.
+        if (typeof result === 'object' && result !== null && 'taskId' in result && 'contextualSummary' in result) {
+            return [result] as AssignmentResult[];
+        }
+
+        // Fallback: check if the response is an object that CONTAINS the array we want (e.g., {"results": [...]})
+        const arrayInResult = Object.values(result).find(Array.isArray);
+        if (arrayInResult) {
+            return arrayInResult as AssignmentResult[];
+        }
+
+        throw new Error("Odpowiedź AI (po parsowaniu) nie jest prawidłową tablicą JSON ani pojedynczym obiektem zadania.");
     } catch (e) {
         console.error("Błąd parsowania JSON z lokalnego LLM:", e);
         throw new Error(`Nie udało się sparsować odpowiedzi JSON z lokalnego LLM. Otrzymano następującą odpowiedź:\n\n${responseContent}`);
