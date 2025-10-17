@@ -44,4 +44,4 @@ Na podstawie powyższych informacji napisz przekonujące, profesjonalne, dwuakap
 - Drugi akapit powinien szczegółowo opisać wpływ tych działań, podkreślając wykazane umiejętności i wartość wniesioną do firmy.
 - Ton powinien być pozytywny i profesjonalny.
 - Nie ograniczaj się do wymieniania zadań. Zsyntetyzuj je w płynną narrację.
-- Wynik powinien zawierać wyłącznie dwa akapity tekstu.`;
+- Wynik powinien zawierać wyłącznie dwa akapity tekstu`;
