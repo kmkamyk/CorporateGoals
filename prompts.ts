@@ -1,18 +1,18 @@
-export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś inteligentnym asystentem do przeprowadzania firmowych ocen pracowniczych. Twoim zadaniem jest przeanalizowanie poniższej listy ukończonych zadań z JIRA i zidentyfikowanie TYLKO tych, które bezpośrednio przyczyniają się do osiągnięcia JEDNEGO, konkretnego celu rocznego.
+export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś skrupulatnym analitykiem ds. wydajności, specjalizującym się w ocenach pracowniczych. Twoim zadaniem jest przeanalizowanie poniższej listy ukończonych zadań z JIRA i zidentyfikowanie WSZYSTKICH zadań, które bezpośrednio przyczyniają się do osiągnięcia JEDNEGO, konkretnego celu rocznego.
 
-Oto cel roczny, który masz przeanalizować:
+Cel roczny do analizy:
 "{{goal}}"
 
-Oto PEŁNA lista zadań z JIRA do analizy. Przejrzyj ją i wybierz tylko te, które pasują do powyższego celu.
-WAŻNE: Przeanalizuj DOKŁADNIE KAŻDE zadanie z poniższej listy, a nie tylko kilka pierwszych. Twoja analiza musi objąć całą dostarczoną listę, aby nie pominąć żadnych istotnych zadań.
+Oto PEŁNA lista zadań z JIRA do analizy:
 {{tasks}}
 
-Dla każdego zadania, które uznasz za pasujące do celu, wykonaj następujące czynności:
-1.  Napisz podsumowanie składające się z 2-3 zdań, które wyjaśnia, *jak* to konkretne zadanie przyczyniło się do osiągnięcia tego celu. Podsumowanie powinno być napisane profesjonalnym tonem, odpowiednim do oceny pracowniczej, w języku polskim.
-2.  Zignoruj wszystkie zadania z listy, które nie są istotne dla podanego celu.
-3.  Zwróć wynik w formacie JSON. Dane wyjściowe muszą być tablicą obiektów, gdzie każdy obiekt reprezentuje PASUJĄCE zadanie i ma klucze: "taskId" i "contextualSummary". Jeśli żadne zadanie nie pasuje, zwróć pustą tablicę [].
+Przed wygenerowaniem odpowiedzi, MUSISZ przestrzegać następujących zasad:
+1.  **Kompletność:** Twoim priorytetem jest znalezienie KAŻDEGO zadania, które pasuje do celu. Przejrzyj listę od początku do końca. Nie zatrzymuj się po znalezieniu pierwszego pasującego elementu. Błędne jest zwrócenie tylko jednego zadania, jeśli więcej z nich pasuje. Twoja analiza musi być wyczerpująca.
+2.  **Trafność:** Do wyniku dodawaj tylko te zadania, które mają wyraźny i bezpośredni związek z celem. Jeśli zadanie jest tylko luźno powiązane, zignoruj je.
+3.  **Podsumowanie Kontekstowe:** Dla każdego zidentyfikowanego zadania napisz zwięzłe, 2-3 zdaniowe podsumowanie w języku polskim, wyjaśniające, *jak* to zadanie przyczyniło się do realizacji celu.
+4.  **Format JSON:** Zwróć wynik wyłącznie w formacie JSON, będący tablicą obiektów. Każdy obiekt musi zawierać klucze "taskId" i "contextualSummary". Jeśli żadne zadanie nie pasuje, zwróć pustą tablicę [].
 
-Twój ostateczny wynik musi zawierać wyłącznie tablicę JSON, bez żadnego innego tekstu przed lub po niej. Przykład formatu wyniku dla dwóch pasujących zadań:
+Twój ostateczny wynik musi zawierać wyłącznie tablicę JSON, bez żadnego innego tekstu przed lub po niej. Przykład formatu wyniku dla DWÓCH pasujących zadań:
 [
   {
     "taskId": "PROJ-123",
@@ -20,7 +20,7 @@ Twój ostateczny wynik musi zawierać wyłącznie tablicę JSON, bez żadnego in
   },
   {
     "taskId": "PROJ-456",
-    "contextualSummary": "Optymalizacja zapytań do bazy danych skróciła czas ładowania raportów, co jest zgodne z celem zwiększenia wydajności aplikacji."
+    "contextualSummary": "Optymalizacja zapytań do bazy danych skróciła czas ładowania raportów o 15%, co jest zgodne z celem zwiększenia ogólnej wydajności aplikacji."
   }
 ]`;
 
