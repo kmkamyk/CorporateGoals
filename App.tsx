@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { JiraTask, ProcessedGoal, JiraCredentials, AssignmentResult, DataSourceMode, LocalLlmConfig, ProcessedTask } from './types';
+import { usePersistentState } from './hooks/usePersistentState';
 import { GoalInput } from './components/GoalInput';
 import { JiraConnect } from './components/JiraConnect';
 import { SummaryDisplay } from './components/SummaryDisplay';
 import { AIConfiguration } from './components/AIConfiguration';
+import { LlmContextView } from './components/LlmContextView';
 import { Button } from './components/common';
 import * as localLlmService from './services/localLlmService';
 import { fetchCompletedTasksMock, fetchRealCompletedTasks, parseManualTasks } from './services/jiraService';
@@ -11,29 +13,29 @@ import { SparklesIcon } from './components/icons';
 import { ASSIGNMENT_PROMPT_TEMPLATE, SUMMARY_PROMPT_TEMPLATE } from './prompts';
 
 const App: React.FC = () => {
-    const [annualGoalsRaw, setAnnualGoalsRaw] = useState('');
+    // Stany nietrwałe, resetowane przy odświeżeniu
     const [jiraTasks, setJiraTasks] = useState<JiraTask[]>([]);
     const [processedGoals, setProcessedGoals] = useState<ProcessedGoal[] | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [jiraCredentials, setJiraCredentials] = useState<JiraCredentials>({
+    const [streamingSummary, setStreamingSummary] = useState<{ goalId: number; text: string } | null>(null);
+    const [llmContext, setLlmContext] = useState<{ title: string, content: string } | null>(null);
+
+    // Stany trwałe, zapisywane w localStorage
+    const [annualGoalsRaw, setAnnualGoalsRaw] = usePersistentState('annualGoalsRaw', '');
+    const [jiraCredentials, setJiraCredentials] = usePersistentState<JiraCredentials>('jiraCredentials', {
         domain: 'your-company.atlassian.net',
         user: 'your.email@example.com',
         token: ''
     });
-    const [dataSourceMode, setDataSourceMode] = useState<DataSourceMode>('mock');
-    const [manualTasksRaw, setManualTasksRaw] = useState('');
-
-    const [assignmentPrompt, setAssignmentPrompt] = useState(ASSIGNMENT_PROMPT_TEMPLATE);
-    const [summaryPrompt, setSummaryPrompt] = useState(SUMMARY_PROMPT_TEMPLATE);
-    
-    const [streamingSummary, setStreamingSummary] = useState<{ goalId: number; text: string } | null>(null);
-
-    const [localLlmConfig, setLocalLlmConfig] = useState<LocalLlmConfig>({
+    const [dataSourceMode, setDataSourceMode] = usePersistentState<DataSourceMode>('dataSourceMode', 'mock');
+    const [manualTasksRaw, setManualTasksRaw] = usePersistentState('manualTasksRaw', '');
+    const [assignmentPrompt, setAssignmentPrompt] = usePersistentState('assignmentPrompt', ASSIGNMENT_PROMPT_TEMPLATE);
+    const [summaryPrompt, setSummaryPrompt] = usePersistentState('summaryPrompt', SUMMARY_PROMPT_TEMPLATE);
+    const [localLlmConfig, setLocalLlmConfig] = usePersistentState<LocalLlmConfig>('localLlmConfig', {
         url: 'http://127.0.0.1:8080/v1/chat/completions',
         model: 'local-model'
     });
-
 
     const handleLoadTasks = useCallback(async () => {
         setIsLoading(true);
@@ -74,41 +76,38 @@ const App: React.FC = () => {
         setError(null);
         setProcessedGoals(null);
         setStreamingSummary(null);
+        setLlmContext(null); // Reset kontekstu na starcie
 
         try {
             const goalsList = annualGoalsRaw.split('\n').filter(g => g.trim() !== '');
             
-            // Initialize goals structure so UI can show placeholders
             const initialGoals: ProcessedGoal[] = goalsList.map((goalText, index) => ({
                 id: index,
                 text: goalText,
                 tasks: [],
-                annualSummary: "..." // Placeholder
+                annualSummary: "..."
             }));
             setProcessedGoals(initialGoals);
 
             const finalResults: ProcessedGoal[] = [];
 
-            // Process each goal sequentially
             for (const [index, goalText] of goalsList.entries()) {
-                // Step 1: Find and summarize tasks relevant to THIS goal
                 const relevantTaskSummaries: AssignmentResult[] = await localLlmService.findAndSummarizeTasksForGoal(
                     goalText,
                     jiraTasks,
                     assignmentPrompt,
-                    localLlmConfig
+                    localLlmConfig,
+                    (prompt) => setLlmContext({
+                        title: `Krok 1/2: Przypisywanie zadań do celu "${goalText}"`,
+                        content: prompt
+                    })
                 );
 
                 const processedTasksForGoal: ProcessedTask[] = relevantTaskSummaries.map(summary => {
                     const originalTask = jiraTasks.find(t => t.id === summary.taskId);
-                    // Handle case where task might not be found, though it shouldn't happen
                     if (!originalTask) return null;
-                    return {
-                        ...originalTask,
-                        goalContextSummary: summary.contextualSummary
-                    };
+                    return { ...originalTask, goalContextSummary: summary.contextualSummary };
                 }).filter((t): t is ProcessedTask => t !== null);
-
 
                 const currentGoalData: ProcessedGoal = {
                     id: index,
@@ -117,12 +116,11 @@ const App: React.FC = () => {
                     annualSummary: "..."
                 };
 
-                // Step 2: Generate annual summary for THIS goal based on relevant tasks
                 let finalSummary = "Nie wygenerowano podsumowania, ponieważ do tego celu nie przypisano żadnych zadań.";
                 if (processedTasksForGoal.length > 0) {
                     const taskSummaries = processedTasksForGoal.map(t => `${t.summary}: ${t.goalContextSummary}`);
                     
-                    setStreamingSummary({ goalId: index, text: '' }); // Start streaming for this goal
+                    setStreamingSummary({ goalId: index, text: '' });
                     
                     finalSummary = await localLlmService.generateAnnualSummary(
                         goalText,
@@ -136,18 +134,21 @@ const App: React.FC = () => {
                                 }
                                 return prev;
                             });
-                        }
+                        },
+                        (prompt) => setLlmContext({
+                             title: `Krok 2/2: Generowanie podsumowania dla celu "${goalText}"`,
+                             content: prompt
+                        })
                     );
                 }
                 
                 currentGoalData.annualSummary = finalSummary;
                 finalResults.push(currentGoalData);
                 
-                // Update UI progressively after each goal is fully processed
                 setProcessedGoals([...finalResults, ...initialGoals.slice(finalResults.length)]);
             }
 
-            setStreamingSummary(null); // End of all streaming
+            setStreamingSummary(null);
 
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Wystąpił nieznany błąd.';
@@ -155,6 +156,7 @@ const App: React.FC = () => {
             console.error(e);
         } finally {
             setIsLoading(false);
+            setLlmContext(null); // Wyczyszczenie kontekstu po zakończeniu
         }
     }, [annualGoalsRaw, jiraTasks, assignmentPrompt, summaryPrompt, localLlmConfig]);
 
@@ -170,7 +172,6 @@ const App: React.FC = () => {
 
                 <main>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* Left column for inputs */}
                         <div className="lg:col-span-1 flex flex-col gap-8">
                             <GoalInput
                                 value={annualGoalsRaw}
@@ -197,6 +198,13 @@ const App: React.FC = () => {
                                 localLlmConfig={localLlmConfig}
                                 setLocalLlmConfig={setLocalLlmConfig}
                             />
+                            {/* Warunkowe renderowanie nowego komponentu */}
+                            {isLoading && llmContext && (
+                                <LlmContextView 
+                                    title={llmContext.title} 
+                                    content={llmContext.content} 
+                                />
+                            )}
                              <div className="mt-auto pt-8">
                                 <Button onClick={handleProcess} disabled={!canProcess || isLoading} className="w-full">
                                     <SparklesIcon className="w-5 h-5 mr-2" />
@@ -205,7 +213,6 @@ const App: React.FC = () => {
                              </div>
                         </div>
 
-                        {/* Right column for results */}
                         <div className="lg:col-span-2">
                            <SummaryDisplay
                              goals={processedGoals}

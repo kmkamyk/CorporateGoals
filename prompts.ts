@@ -3,7 +3,8 @@ export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś inteligentnym asystentem do p
 Oto cel roczny, który masz przeanalizować:
 "{{goal}}"
 
-Oto PEŁNA lista zadań z JIRA do analizy. Przejrzyj ją i wybierz tylko te, które pasują do powyższego celu:
+Oto PEŁNA lista zadań z JIRA do analizy. Przejrzyj ją i wybierz tylko te, które pasują do powyższego celu.
+WAŻNE: Przeanalizuj DOKŁADNIE KAŻDE zadanie z poniższej listy, a nie tylko kilka pierwszych. Twoja analiza musi objąć całą dostarczoną listę, aby nie pominąć żadnych istotnych zadań.
 {{tasks}}
 
 Dla każdego zadania, które uznasz za pasujące do celu, wykonaj następujące czynności:

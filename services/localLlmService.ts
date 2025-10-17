@@ -110,7 +110,8 @@ export const findAndSummarizeTasksForGoal = async (
     goal: string,
     tasks: JiraTask[],
     promptTemplate: string,
-    config: LocalLlmConfig
+    config: LocalLlmConfig,
+    onPromptReady?: (prompt: string) => void
 ): Promise<AssignmentResult[]> => {
     
     const tasksString = JSON.stringify(tasks.map(task => ({
@@ -121,11 +122,13 @@ export const findAndSummarizeTasksForGoal = async (
 
     const prompt = fillPromptTemplate(promptTemplate, { goal: goal, tasks: tasksString });
 
-    // We await the full response here, as we need the complete JSON to proceed.
+    if (onPromptReady) {
+        onPromptReady(prompt);
+    }
+
     const responseContent = await callLocalLlmStream(prompt, config, true);
     
     try {
-        // More robust JSON extraction
         const firstBracket = responseContent.indexOf('[');
         const firstBrace = responseContent.indexOf('{');
         
@@ -136,7 +139,6 @@ export const findAndSummarizeTasksForGoal = async (
         else startIndex = Math.min(firstBracket, firstBrace);
 
         if (startIndex === -1) {
-            // It's possible the model returns an empty array `[]` as a valid response
             if (responseContent.trim() === '[]') return [];
             throw new Error("Nie znaleziono początku obiektu JSON ([ lub {) w odpowiedzi AI.");
         }
@@ -156,8 +158,6 @@ export const findAndSummarizeTasksForGoal = async (
         const result = JSON.parse(jsonString);
 
          if (!Array.isArray(result)) {
-            // Some models might wrap the array in an object, e.g., { "assignments": [...] }
-            // Let's try to find an array within the object.
             const arrayInResult = Object.values(result).find(Array.isArray);
             if (arrayInResult) {
                 return arrayInResult as AssignmentResult[];
@@ -179,11 +179,16 @@ export const generateAnnualSummary = async (
     taskSummaries: string[],
     promptTemplate: string,
     config: LocalLlmConfig,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    onPromptReady?: (prompt: string) => void
 ): Promise<string> => {
     
     const summariesString = taskSummaries.map(s => `- ${s}`).join('\n');
     const prompt = fillPromptTemplate(promptTemplate, { goal: goal, summaries: summariesString });
+
+    if (onPromptReady) {
+        onPromptReady(prompt);
+    }
 
     const fullResponse = await callLocalLlmStream(prompt, config, false, onChunk);
 
