@@ -34,7 +34,8 @@ const App: React.FC = () => {
     const [summaryPrompt, setSummaryPrompt] = usePersistentState('summaryPrompt', SUMMARY_PROMPT_TEMPLATE);
     const [localLlmConfig, setLocalLlmConfig] = usePersistentState<LocalLlmConfig>('localLlmConfig', {
         url: 'http://127.0.0.1:8080/v1/chat/completions',
-        model: 'local-model'
+        model: 'local-model',
+        apiFormat: 'llama.cpp'
     });
 
     const handleLoadTasks = useCallback(async () => {

@@ -17,8 +17,8 @@ const callLocalLlmStream = async (
     expectJson: boolean,
     onChunk?: (chunk: string) => void
 ): Promise<string> => {
-    if (!config || !config.url || !config.model) {
-        throw new Error("Konfiguracja lokalnego LLM (URL i nazwa modelu) jest wymagana.");
+    if (!config || !config.url || !config.model || !config.apiFormat) {
+        throw new Error("Konfiguracja lokalnego LLM (URL, nazwa modelu i format API) jest wymagana.");
     }
     
     const body: any = {
@@ -27,12 +27,21 @@ const callLocalLlmStream = async (
             { role: "system", content: "You are a helpful assistant." },
             { role: "user", content: prompt }
         ],
-        temperature: 0.5,
-        stream: true, // Enable streaming
+        stream: true,
     };
-    
-    if (expectJson) {
-        body.response_format = { type: "json_object" };
+
+    if (config.apiFormat === 'llama.cpp') {
+        body.temperature = 0.5;
+        if (expectJson) {
+            body.response_format = { type: "json_object" };
+        }
+    } else if (config.apiFormat === 'ollama') {
+        body.options = {
+            temperature: 0.5
+        };
+        if (expectJson) {
+            body.format = 'json';
+        }
     }
 
     try {
@@ -46,7 +55,7 @@ const callLocalLlmStream = async (
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Lokalne API LLM zwróciło błąd (${response.status}): ${errorText}`);
+            throw new Error(`Lokalne API LLM (${config.apiFormat}) zwróciło błąd (${response.status}): ${errorText}`);
         }
 
         if (!response.body) {
@@ -56,44 +65,69 @@ const callLocalLlmStream = async (
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
-        let buffer = '';
+        
+        const parseStream = async () => {
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                
+                if (config.apiFormat === 'llama.cpp') {
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop() || '';
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop() || ''; // Keep the last, possibly incomplete line
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const dataContent = line.substring(6);
-                    if (dataContent === '[DONE]') {
-                        break;
-                    }
-                    try {
-                        const parsed = JSON.parse(dataContent);
-                        const chunk = parsed.choices?.[0]?.delta?.content;
-                        if (chunk) {
-                            fullContent += chunk;
-                            if (onChunk) {
-                                onChunk(chunk);
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataContent = line.substring(6);
+                            if (dataContent === '[DONE]') {
+                                return;
+                            }
+                            try {
+                                const parsed = JSON.parse(dataContent);
+                                const chunk = parsed.choices?.[0]?.delta?.content;
+                                if (chunk) {
+                                    fullContent += chunk;
+                                    if (onChunk) onChunk(chunk);
+                                }
+                            } catch (e) {
+                                console.error("Błąd parsowania fragmentu strumienia JSON (llama.cpp):", e, "Fragment:", dataContent);
                             }
                         }
-                    } catch (e) {
-                        console.error("Błąd parsowania fragmentu strumienia JSON:", e, "Fragment:", dataContent);
+                    }
+                } else if (config.apiFormat === 'ollama') {
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+                        try {
+                            const parsed = JSON.parse(line);
+                            const chunk = parsed.message?.content;
+                            if (chunk) {
+                                fullContent += chunk;
+                                if (onChunk) onChunk(chunk);
+                            }
+                            if (parsed.done) {
+                                return;
+                            }
+                        } catch (e) {
+                            console.error("Błąd parsowania fragmentu strumienia JSON (Ollama):", e, "Fragment:", line);
+                        }
                     }
                 }
             }
-        }
+        };
+
+        await parseStream();
         
         return fullContent;
 
     } catch (error) {
         console.error("Błąd podczas wywołania lokalnego LLM:", error);
         if (error instanceof TypeError) {
-             throw new Error(`Błąd sieciowy podczas łączenia z lokalnym LLM. Upewnij się, że adres URL (${config.url}) jest poprawny, serwer działa i nie ma problemów z CORS.`);
+             throw new Error(`Błąd sieciowy podczas łączenia z lokalnym LLM (${config.apiFormat}). Upewnij się, że adres URL (${config.url}) jest poprawny, serwer działa i nie ma problemów z CORS.`);
         }
         if (error instanceof Error) {
             throw error;
