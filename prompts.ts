@@ -1,26 +1,34 @@
-export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś skrupulatnym analitykiem ds. wydajności, specjalizującym się w ocenach pracowniczych. Twoim zadaniem jest przeanalizowanie poniższej listy ukończonych zadań z JIRA i zidentyfikowanie WSZYSTKICH zadań, które bezpośrednio przyczyniają się do osiągnięcia JEDNEGO, konkretnego celu rocznego.
+export const ASSIGNMENT_PROMPT_TEMPLATE = `Jesteś precyzyjnym analitykiem, którego jedynym zadaniem jest dokładne i kompletne dopasowanie zadań JIRA do podanego celu rocznego.
 
-Cel roczny do analizy:
+**Cel Roczny:**
 "{{goal}}"
 
-Oto PEŁNA lista zadań z JIRA do analizy:
+**Instrukcja Krok po Kroku, której musisz bezwzględnie przestrzegać:**
+1.  **Zrozumienie Celu:** Przeczytaj powyższy cel roczny i zidentyfikuj jego kluczowe założenia, słowa kluczowe i intencje.
+2.  **Analiza Każdego Zadania:** Poniżej znajduje się pełna lista zadań. Twoim obowiązkiem jest przeanalizować **KAŻDE** zadanie z tej listy, jedno po drugim, od początku do samego końca. Dla każdego zadania zadaj sobie pytanie: "Czy to zadanie ma bezpośredni i znaczący wkład w realizację celu?".
+3.  **Nie Idź na Skróty (NAJWAŻNIEJSZE):** Najczęstszym błędem jest zatrzymanie się po znalezieniu jednego lub dwóch pasujących zadań. Jest to niedopuszczalne. Twoja analiza musi objąć **CAŁĄ LISTĘ**. Musisz przeiterować po wszystkich zadaniach.
+4.  **Tworzenie Listy Wyników:** W trakcie analizy, jeśli uznasz, że zadanie pasuje, dodaj je do swojej wewnętrznej listy wyników. Dla każdego takiego zadania, przygotuj zwięzłe, 1-2 zdaniowe uzasadnienie, dlaczego wnosi ono wkład w cel.
+5.  **Formatowanie Ostatecznej Odpowiedzi:** Po przeanalizowaniu WSZYSTKICH zadań, sformatuj swoją kompletną listę wyników jako tablicę JSON.
+
+**Pełna Lista Zadań do Analizy:**
 {{tasks}}
 
-Przed wygenerowaniem odpowiedzi, MUSISZ przestrzegać następujących zasad:
-1.  **Kompletność:** Twoim priorytetem jest znalezienie KAŻDEGO zadania, które pasuje do celu. Przejrzyj listę od początku do końca. Nie zatrzymuj się po znalezieniu pierwszego pasującego elementu. Błędne jest zwrócenie tylko jednego zadania, jeśli więcej z nich pasuje. Twoja analiza musi być wyczerpująca.
-2.  **Trafność:** Do wyniku dodawaj tylko te zadania, które mają wyraźny i bezpośredni związek z celem. Jeśli zadanie jest tylko luźno powiązane, zignoruj je.
-3.  **Podsumowanie Kontekstowe:** Dla każdego zidentyfikowanego zadania napisz zwięzłe, 2-3 zdaniowe podsumowanie w języku polskim, wyjaśniające, *jak* to zadanie przyczyniło się do realizacji celu.
-4.  **Format JSON:** Zwróć wynik wyłącznie w formacie JSON, będący tablicą obiektów. Każdy obiekt musi zawierać klucze "taskId" i "contextualSummary". Jeśli żadne zadanie nie pasuje, zwróć pustą tablicę [].
+**Format Wyjściowy (WYŁĄCZNIE CZYSTY JSON):**
+Zwróć wynik jako tablicę obiektów JSON. Każdy obiekt musi zawierać klucze "taskId" i "contextualSummary". Jeśli absolutnie żadne zadanie nie pasuje, zwróć pustą tablicę []. Nie dodawaj żadnych wyjaśnień, komentarzy ani innego tekstu poza samą tablicą JSON.
 
-Twój ostateczny wynik musi zawierać wyłącznie tablicę JSON, bez żadnego innego tekstu przed lub po niej. Przykład formatu wyniku dla DWÓCH pasujących zadań:
+Przykład formatu wyniku dla TRZECH pasujących zadań:
 [
   {
     "taskId": "PROJ-123",
-    "contextualSummary": "Implementacja nowego przepływu uwierzytelniania użytkowników bezpośrednio przyczyniła się do zwiększenia bezpieczeństwa platformy, co było kluczowym elementem celu poprawy wydajności i niezawodności aplikacji."
+    "contextualSummary": "Zadanie to bezpośrednio przyczyniło się do celu poprzez implementację nowej funkcjonalności X, która była kluczowym wymogiem."
   },
   {
     "taskId": "PROJ-456",
-    "contextualSummary": "Optymalizacja zapytań do bazy danych skróciła czas ładowania raportów o 15%, co jest zgodne z celem zwiększenia ogólnej wydajności aplikacji."
+    "contextualSummary": "Optymalizacja wydajności bazy danych w ramach tego zadania skróciła czas odpowiedzi systemu o 20%, co jest zgodne z celem."
+  },
+  {
+    "taskId": "PROJ-789",
+    "contextualSummary": "Wdrożenie zautomatyzowanych testów w tym zadaniu zwiększyło stabilność aplikacji, co było jednym z głównych założeń celu."
   }
 ]`;
 
